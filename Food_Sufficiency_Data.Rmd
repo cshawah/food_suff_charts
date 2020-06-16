@@ -1,0 +1,164 @@
+---
+title: "Food Sufficiency Plots"
+author: "Chloe Shawah"
+date: "6/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(stringr)
+
+# There's probably a MUCH nicer way to retrieve the data, sorry! 
+url <- "https://www2.census.gov/programs-surveys/demo/datasets/hhp/2020/wk4/HPS_Week04_PUF_CSV.zip"
+tempdl <- tempfile()
+download.file(url,tempdl, mode="wb") 
+unzip(tempdl, "pulse2020_puf_04.csv") 
+week4 <- read.csv("pulse2020_puf_04.csv") %>% 
+filter(EST_ST == 9)
+unlink(tempdl)
+
+```
+
+```{r Prior to Current Food Sufficiency}
+
+prior_suff <- week4 %>%
+  filter(PRIFOODSUF != -99 & PRIFOODSUF != -88) %>%
+  dplyr::count(PRIFOODSUF) %>%
+  mutate(denom = sum(wt = n)) %>%
+  mutate(perc = n/denom) %>% 
+  mutate(time = "P") %>% 
+  setNames(., c("suff", "n", "denom", "perc", "time"))
+
+curr_suff <- week4 %>%
+  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+  dplyr::count(CURFOODSUF) %>%
+  mutate(denom = sum(wt = n)) %>%
+  mutate(perc = n/denom) %>% 
+  mutate(time = "C") %>% 
+  setNames(., c("suff", "n", "denom", "perc", "time"))
+
+pri_to_curr <- rbind(prior_suff, curr_suff) %>% 
+  mutate(suff = as.factor(suff)) %>% 
+  mutate(time = as.factor(time)) %>% 
+  mutate(time = fct_relevel(time, "P", "C")) %>% 
+  mutate(time = fct_recode(time, "Current Food Sufficiency" = "C", "Prior to March 13, 2020" = "P")) %>% 
+  mutate(suff = fct_recode(suff, 
+                           "Enough of the kinds of foods wanted"= "1", 
+                           "Enough, but not always kinds wanted" = "2", 
+                           "Sometimes not enough to eat" = "3", 
+                           "Often not enough to eat" = "4"))
+
+```
+
+```{r Reason for Insuff}
+
+reason_for_insuff <- data.frame("reason" = c("Couldn't afford to buy more food", 
+                                    "Couldn’t get out to buy food", 
+                                    "Afraid to go or didn’t want to go out", 
+                                    "Couldn’t get groceries or meals delivered", 
+                                    "Stores didn’t have the food wanted"),
+                       "number" = c(week4 %>% filter(FOODSUFRSN1 == 1) %>% nrow(),
+                                    week4 %>% filter(FOODSUFRSN2 == 1) %>% nrow(),
+                                    week4 %>% filter(FOODSUFRSN3 == 1) %>% nrow(),
+                                    week4 %>% filter(FOODSUFRSN4 == 1) %>% nrow(),
+                                    week4 %>% filter(FOODSUFRSN5 == 1) %>% nrow()))
+
+```
+
+```{r Food Resources}
+
+resource <- data.frame("resource" = c("Free meals through the school or other programs aimed at children", 
+                                    "Food pantry or food bank", 
+                                    "Home-delivered meal service like Meals on Wheels", 
+                                    "Church, synagogue, temple, mosque or other religious organization", 
+                                    "Shelter or soup kitchen",
+                                    "Other community program",
+                                    "Family, friends, or neighbors"),
+                       "number" = c(week4 %>% filter(WHEREFREE1 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE2 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE3 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE4 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE5 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE6 == 1) %>% nrow(),
+                                      week4 %>% filter(WHEREFREE7 == 1) %>% nrow()))
+
+```
+
+```{r Reject code to maybe resurrect later}
+
+## Number of people experiencing food insufficiency
+
+# num_curr_insuff <- curr_suff %>%
+#   ungroup() %>%
+#   filter(suff %in% c(2, 3, 4)) %>%
+#   tally(wt = n) %>%
+#   pull(n)
+
+
+## Number of people receiving free meals
+
+# num_free_food <- week4 %>% 
+#   filter(FREEFOOD == 1) %>% 
+#   tally(FREEFOOD) %>% 
+#   pull(n)
+
+
+## Sufficiency by race, Nathan made this chart already! With week 4 though?
+
+# curr_suff_race <- week4 %>%
+#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+#   group_by(RRACE) %>%
+#   count(CURFOODSUF) %>%
+#   mutate(denom = sum(wt = n)) %>%
+#   mutate(perc = n/denom)
+
+
+## Food insufficiency by work loss
+
+# curr_suff_wrkls <- week4 %>%
+#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+#   filter(WRKLOSS != -99) %>%
+#   group_by(WRKLOSS) %>%
+#   count(CURFOODSUF) %>%
+#   mutate(denom = sum(wt = n)) %>%
+#   mutate(perc = n/denom)
+
+```
+
+
+```{r Visualizations}
+
+pri_to_curr_plot <- ggplot(pri_to_curr) +
+  geom_bar(aes(x = suff, y = perc, fill = time), stat = "identity", position=position_dodge()) +
+  scale_fill_brewer(palette="Dark2") +
+  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
+  xlab("Food sufficiency level") +
+  ylab("Percent of respondents") +
+  labs(title = "Food Sufficiency", subtitle = "Week 4 of Pulse Survey Data") +
+  theme(legend.title = element_blank())
+
+reason_plot <- ggplot(reason_for_insuff) +
+  geom_bar(aes(x = reorder(reason, -percent), y = percent, fill = reason), stat = "identity", show.legend = FALSE) +
+  scale_fill_brewer(palette="Dark2") +
+  scale_x_discrete(labels = function(reason) str_wrap(reason, width = 10)) +
+  xlab("Reason for Food Insufficiency") +
+  ylab("Percent of individuals with food insufficiency") +
+  labs(title = "Reason for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
+
+resource_plot <- ggplot(resource) +
+  geom_bar(aes(x = reorder(resource, -percent), y = percent, fill = resource), stat = "identity", show.legend = FALSE) +
+  scale_fill_brewer(palette="Dark2") +
+  scale_x_discrete(labels = function(resource) str_wrap(resource, width = 10)) +
+  xlab("Source of free meals") +
+  ylab("Percent of individuals who received free meals") +
+  labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
+
+# ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
+# ggsave("reason.png", plot = reason_plot)
+# ggsave("resource.png", plot = resource_plot)
+
+
+```
