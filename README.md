@@ -1,2 +1,2 @@
-# food_suff_charts
-Charts for food sufficiency op-ed
+# Food Sufficiency Charts
+Charts for food sufficiency for potential op-ed using Census Household Pulse Survey microdata from Week 4
