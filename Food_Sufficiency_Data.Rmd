@@ -41,12 +41,12 @@ curr_suff <- week4 %>%
   setNames(., c("suff", "n", "denom", "perc", "time"))
 
 pri_to_curr <- rbind(prior_suff, curr_suff) %>% 
+  filter(suff != 1) %>% 
   mutate(suff = as.factor(suff)) %>% 
   mutate(time = as.factor(time)) %>% 
   mutate(time = fct_relevel(time, "P", "C")) %>% 
   mutate(time = fct_recode(time, "Current Food Sufficiency" = "C", "Prior to March 13, 2020" = "P")) %>% 
-  mutate(suff = fct_recode(suff, 
-                           "Enough of the kinds of foods wanted"= "1", 
+  mutate(suff = fct_recode(suff,
                            "Enough, but not always kinds wanted" = "2", 
                            "Sometimes not enough to eat" = "3", 
                            "Often not enough to eat" = "4"))
@@ -199,10 +199,10 @@ resource_plot <- ggplot(resource) +
   ylab("Percent of individuals who received free meals") +
   labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
 
-ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
-ggsave("reason.png", plot = reason_plot)
-ggsave("resource.png", plot = resource_plot)
-ggsave("race.png", plot = race_plot)
+#ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
+#ggsave("reason.png", plot = reason_plot)
+#ggsave("resource.png", plot = resource_plot)
+#ggsave("race.png", plot = race_plot)
 
 
 ```
