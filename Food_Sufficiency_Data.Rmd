@@ -55,6 +55,12 @@ pri_to_curr <- rbind(prior_suff, curr_suff) %>%
 
 ```{r Reason for Insuff}
 
+num_curr_insuff <- curr_suff %>%
+  ungroup() %>%
+  filter(suff %in% c(2, 3, 4)) %>%
+  tally(wt = n) %>%
+  pull(n)
+
 reason_for_insuff <- data.frame("reason" = c("Couldn't afford to buy more food", 
                                     "Couldn’t get out to buy food", 
                                     "Afraid to go or didn’t want to go out", 
@@ -64,11 +70,18 @@ reason_for_insuff <- data.frame("reason" = c("Couldn't afford to buy more food",
                                     week4 %>% filter(FOODSUFRSN2 == 1) %>% nrow(),
                                     week4 %>% filter(FOODSUFRSN3 == 1) %>% nrow(),
                                     week4 %>% filter(FOODSUFRSN4 == 1) %>% nrow(),
-                                    week4 %>% filter(FOODSUFRSN5 == 1) %>% nrow()))
+                                    week4 %>% filter(FOODSUFRSN5 == 1) %>% nrow())) %>% 
+  mutate(percent = number/num_curr_insuff)
+
 
 ```
 
 ```{r Food Resources}
+
+num_free_food <- week4 %>%
+  filter(FREEFOOD == 1) %>%
+  tally(FREEFOOD) %>%
+  pull(n)
 
 resource <- data.frame("resource" = c("Free meals through the school or other programs aimed at children", 
                                     "Food pantry or food bank", 
@@ -83,37 +96,58 @@ resource <- data.frame("resource" = c("Free meals through the school or other pr
                                       week4 %>% filter(WHEREFREE4 == 1) %>% nrow(),
                                       week4 %>% filter(WHEREFREE5 == 1) %>% nrow(),
                                       week4 %>% filter(WHEREFREE6 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE7 == 1) %>% nrow()))
+                                      week4 %>% filter(WHEREFREE7 == 1) %>% nrow())) %>% 
+  mutate(percent = number/num_free_food)
 
 ```
 
+```{r Insuff by Race}
+
+curr_suff_race <- week4 %>%
+  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+  group_by(RRACE) %>%
+  count(CURFOODSUF) %>%
+  mutate(denom = sum(wt = n)) %>%
+  mutate(perc = n/denom)
+
+curr_suff_white <- curr_suff_race %>% 
+  ungroup() %>% 
+  filter(CURFOODSUF != 1 & RRACE == 1) %>% 
+  mutate(RRACE = as.factor(RRACE)) %>% 
+  mutate(RRACE = fct_recode(RRACE,"White" = "1")) %>% 
+  setNames(., c("Race", "suff", "n", "denom", "Percent"))
+
+curr_suff_black <- curr_suff_race %>% 
+  ungroup() %>% 
+  filter(CURFOODSUF != 1 & RRACE == 2) %>%
+  mutate(RRACE = as.factor(RRACE)) %>% 
+  mutate(RRACE = fct_recode(RRACE,"Black" = "2")) %>% 
+  setNames(., c("Race", "suff", "n", "denom", "Percent"))
+  
+
+curr_suff_hispanic <- week4 %>%
+  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+  group_by(RHISPANIC) %>% 
+  count(CURFOODSUF) %>%
+  mutate(denom = sum(wt = n)) %>%
+  mutate(perc = n/denom) %>%
+  ungroup() %>% 
+  filter(CURFOODSUF != 1 & RHISPANIC == 2) %>% 
+  mutate(RHISPANIC = as.factor(RHISPANIC)) %>% 
+  mutate(RHISPANIC = fct_recode(RHISPANIC, "Latinx" = "2")) %>% 
+  setNames(., c("Race", "suff", "n", "denom", "Percent"))
+
+suff_race <- rbind(curr_suff_white, curr_suff_black, curr_suff_hispanic) %>% 
+  mutate(suff = as.factor(suff)) %>% 
+  mutate(suff = fct_recode(suff, 
+                           "Enough, but not always kinds wanted" = "2", 
+                           "Sometimes not enough to eat" = "3", 
+                           "Often not enough to eat" = "4"))
+
+```
+
+
 ```{r Reject code to maybe resurrect later}
-
-## Number of people experiencing food insufficiency
-
-# num_curr_insuff <- curr_suff %>%
-#   ungroup() %>%
-#   filter(suff %in% c(2, 3, 4)) %>%
-#   tally(wt = n) %>%
-#   pull(n)
-
-
-## Number of people receiving free meals
-
-# num_free_food <- week4 %>% 
-#   filter(FREEFOOD == 1) %>% 
-#   tally(FREEFOOD) %>% 
-#   pull(n)
-
-
-## Sufficiency by race, Nathan made this chart already! With week 4 though?
-
-# curr_suff_race <- week4 %>%
-#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-#   group_by(RRACE) %>%
-#   count(CURFOODSUF) %>%
-#   mutate(denom = sum(wt = n)) %>%
-#   mutate(perc = n/denom)
 
 
 ## Food insufficiency by work loss
@@ -130,6 +164,15 @@ resource <- data.frame("resource" = c("Free meals through the school or other pr
 
 
 ```{r Visualizations}
+
+race_plot <- ggplot(suff_race) +
+  geom_bar(aes(x = suff, y = Percent, fill = Race), stat = "identity", position=position_dodge()) +
+  scale_fill_brewer(palette="Dark2") +
+  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
+  xlab("Food sufficiency level") +
+  ylab("Percent of respondents") +
+  labs(title = "Food Sufficiency by Race", subtitle = "Week 4 of Pulse Survey Data") +
+  theme(legend.title = element_blank())
 
 pri_to_curr_plot <- ggplot(pri_to_curr) +
   geom_bar(aes(x = suff, y = perc, fill = time), stat = "identity", position=position_dodge()) +
@@ -156,9 +199,10 @@ resource_plot <- ggplot(resource) +
   ylab("Percent of individuals who received free meals") +
   labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
 
-# ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
-# ggsave("reason.png", plot = reason_plot)
-# ggsave("resource.png", plot = resource_plot)
+ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
+ggsave("reason.png", plot = reason_plot)
+ggsave("resource.png", plot = resource_plot)
+ggsave("race.png", plot = race_plot)
 
 
 ```
