@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(stringr)
+library(camiller)
+library(lubridate)
 
 # There's probably a MUCH nicer way to retrieve the data, sorry! 
 url <- "https://www2.census.gov/programs-surveys/demo/datasets/hhp/2020/wk4/HPS_Week04_PUF_CSV.zip"
@@ -19,6 +21,11 @@ unzip(tempdl, "pulse2020_puf_04.csv")
 week4 <- read.csv("pulse2020_puf_04.csv") %>% 
 filter(EST_ST == 9)
 unlink(tempdl)
+
+#DSS Data
+dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOWNLOAD") %>% 
+  select(Date, SNAP.applications) 
+  dss$Date <- as.Date(as.character(dss$Date), format='%m/%d/%Y')
 
 ```
 
@@ -134,7 +141,7 @@ curr_suff_hispanic <- week4 %>%
   ungroup() %>% 
   filter(CURFOODSUF != 1 & RHISPANIC == 2) %>% 
   mutate(RHISPANIC = as.factor(RHISPANIC)) %>% 
-  mutate(RHISPANIC = fct_recode(RHISPANIC, "Latinx" = "2")) %>% 
+  mutate(RHISPANIC = fct_recode(RHISPANIC, "Latino" = "2")) %>% 
   setNames(., c("Race", "suff", "n", "denom", "Percent"))
 
 suff_race <- rbind(curr_suff_white, curr_suff_black, curr_suff_hispanic) %>% 
@@ -172,6 +179,7 @@ race_plot <- ggplot(suff_race) +
   xlab("Food sufficiency level") +
   ylab("Percent of respondents") +
   labs(title = "Food Sufficiency by Race", subtitle = "Week 4 of Pulse Survey Data") +
+  camiller::theme_din() +
   theme(legend.title = element_blank())
 
 pri_to_curr_plot <- ggplot(pri_to_curr) +
@@ -181,15 +189,16 @@ pri_to_curr_plot <- ggplot(pri_to_curr) +
   xlab("Food sufficiency level") +
   ylab("Percent of respondents") +
   labs(title = "Food Sufficiency", subtitle = "Week 4 of Pulse Survey Data") +
+  camiller::theme_din() +
   theme(legend.title = element_blank())
 
-reason_plot <- ggplot(reason_for_insuff) +
-  geom_bar(aes(x = reorder(reason, -percent), y = percent, fill = reason), stat = "identity", show.legend = FALSE) +
-  scale_fill_brewer(palette="Dark2") +
-  scale_x_discrete(labels = function(reason) str_wrap(reason, width = 10)) +
-  xlab("Reason for Food Insufficiency") +
-  ylab("Percent of individuals with food insufficiency") +
-  labs(title = "Reason for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
+# reason_plot <- ggplot(reason_for_insuff) +
+#   geom_bar(aes(x = reorder(reason, -percent), y = percent, fill = reason), stat = "identity", show.legend = FALSE) +
+#   scale_fill_brewer(palette="Dark2") +
+#   scale_x_discrete(labels = function(reason) str_wrap(reason, width = 10)) +
+#   xlab("Reason for Food Insufficiency") +
+#   ylab("Percent of individuals with food insufficiency") +
+#   labs(title = "Reason for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
 
 resource_plot <- ggplot(resource) +
   geom_bar(aes(x = reorder(resource, -percent), y = percent, fill = resource), stat = "identity", show.legend = FALSE) +
@@ -197,12 +206,25 @@ resource_plot <- ggplot(resource) +
   scale_x_discrete(labels = function(resource) str_wrap(resource, width = 10)) +
   xlab("Source of free meals") +
   ylab("Percent of individuals who received free meals") +
-  labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
+  labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data") +
+  camiller::theme_din()
 
-#ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
-#ggsave("reason.png", plot = reason_plot)
-#ggsave("resource.png", plot = resource_plot)
-#ggsave("race.png", plot = race_plot)
+snap_plot <- ggplot(dss, aes(x=Date, y=SNAP.applications)) + 
+  geom_point() +
+  geom_smooth(se = FALSE, color = "red") +
+  geom_vline(xintercept = as.numeric(ymd("2020-03-13")), linetype="dashed", 
+                color = "gray", size=1.5) +
+  camiller::theme_din() +
+  labs(title = "Number of CT SNAP Applications during COVID-19") +
+  xlab("Date") +
+  ylab("Number of Applicants") +
+  scale_x_date() +
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+
+# ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
+# ggsave("resource.png", plot = resource_plot)
+# ggsave("race.png", plot = race_plot)
+# ggsave("dss_snap.png", plot = snap_plot)
 
 
 ```
