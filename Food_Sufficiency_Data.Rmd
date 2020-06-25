@@ -24,8 +24,9 @@ unlink(tempdl)
 
 #DSS Data
 dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOWNLOAD") %>% 
-  select(Date, SNAP.applications) 
-  dss$Date <- as.Date(as.character(dss$Date), format='%m/%d/%Y')
+  select(Date, SNAP.applications)
+  dss$Date <- as.Date(as.character(dss$Date), format='%m/%d/%Y') 
+
 
 ```
 
@@ -150,6 +151,19 @@ suff_race <- rbind(curr_suff_white, curr_suff_black, curr_suff_hispanic) %>%
                            "Enough, but not always kinds wanted" = "2", 
                            "Sometimes not enough to eat" = "3", 
                            "Often not enough to eat" = "4"))
+
+```
+
+```{r DSS Data}
+
+dss_prior <- dss %>% 
+  filter(Date < "2020-03-10")
+dss_post <- dss %>% 
+  filter(Date >= "2020-03-10")
+  
+mean_prior <- mean(dss_prior$SNAP.applications)
+mean_post <- mean(dss_post$SNAP.applications)
+  
 
 ```
 
