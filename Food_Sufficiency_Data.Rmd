@@ -190,6 +190,7 @@ race_plot <- ggplot(suff_race) +
   geom_bar(aes(x = suff, y = Percent, fill = Race), stat = "identity", position=position_dodge()) +
   scale_fill_brewer(palette="Dark2") +
   scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
+  scale_y_continuous(labels = scales::percent) +
   xlab("Food sufficiency level") +
   ylab("Percent of respondents") +
   labs(title = "Food Sufficiency by Race", subtitle = "Week 4 of Pulse Survey Data") +
@@ -200,6 +201,7 @@ pri_to_curr_plot <- ggplot(pri_to_curr) +
   geom_bar(aes(x = suff, y = perc, fill = time), stat = "identity", position=position_dodge()) +
   scale_fill_brewer(palette="Dark2") +
   scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
+  scale_y_continuous(labels = scales::percent) +
   xlab("Food sufficiency level") +
   ylab("Percent of respondents") +
   labs(title = "Food Sufficiency", subtitle = "Week 4 of Pulse Survey Data") +
@@ -218,6 +220,7 @@ resource_plot <- ggplot(resource) +
   geom_bar(aes(x = reorder(resource, -percent), y = percent, fill = resource), stat = "identity", show.legend = FALSE) +
   scale_fill_brewer(palette="Dark2") +
   scale_x_discrete(labels = function(resource) str_wrap(resource, width = 10)) +
+  scale_y_continuous(labels = scales::percent) +
   xlab("Source of free meals") +
   ylab("Percent of individuals who received free meals") +
   labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data") +
@@ -235,10 +238,10 @@ snap_plot <- ggplot(dss, aes(x=Date, y=SNAP.applications)) +
   scale_x_date() +
   theme(axis.text.x=element_text(angle=90,hjust=1))
 
-# ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
-# ggsave("resource.png", plot = resource_plot)
-# ggsave("race.png", plot = race_plot)
-# ggsave("dss_snap.png", plot = snap_plot)
+ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
+ggsave("resource.png", plot = resource_plot)
+ggsave("race.png", plot = race_plot)
+ggsave("dss_snap.png", plot = snap_plot)
 
 
 ```
