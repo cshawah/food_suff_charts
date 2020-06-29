@@ -12,52 +12,213 @@ library(tidyverse)
 library(stringr)
 library(camiller)
 library(lubridate)
+library(srvyr)
+library(janitor)
+library(showtext)
+library(rvest)
 
-# There's probably a MUCH nicer way to retrieve the data, sorry! 
-url <- "https://www2.census.gov/programs-surveys/demo/datasets/hhp/2020/wk4/HPS_Week04_PUF_CSV.zip"
-tempdl <- tempfile()
-download.file(url,tempdl, mode="wb") 
-unzip(tempdl, "pulse2020_puf_04.csv") 
-week4 <- read.csv("pulse2020_puf_04.csv") %>% 
-filter(EST_ST == 9)
-unlink(tempdl)
 
 #DSS Data
 dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOWNLOAD") %>% 
   select(Date, SNAP.applications)
   dss$Date <- as.Date(as.character(dss$Date), format='%m/%d/%Y') 
 
+```
+
+```{r Retrieve Microdata}
+
+#Nathan's script 
+links <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html") %>% 
+  html_nodes(".uscb-text-link") %>% 
+  html_attr("href") %>% 
+  str_subset("CSV") %>% 
+  str_sub(3,-1)
+
+walk(links, function(puf_url){
+  temp <- tempfile()
+  download.file(paste0("https://", puf_url),temp)
+  filename <- unzip(temp, list = T)$Name %>% 
+    str_subset("pulse2020_puf*")
+  week <- str_extract(filename, "(?<=puf_0)([0-9])")
+  
+  read_csv(unz(temp, filename)) %>% 
+    saveRDS(paste0("data/microdata/week_", week, ".RDS"))
+  unlink(temp)
+}) 
 
 ```
 
+
+```{r Chart Style}
+
+font_add_google(name = "Source Sans Pro")
+showtext_auto()
+
+theme_src <- function(base_family = "Source Sans Pro", base_size = 12, ...) {
+  camiller::theme_din(base_family = base_family, base_size = base_size, ...) +
+    theme(plot.title.position = "plot",
+          plot.caption.position = "panel",
+          strip.text = element_text(face = "bold"),
+          legend.title = element_text(size = rel(1)),
+          legend.text = element_text(size = rel(0.75)),
+          legend.key.width = unit(1.1, "lines"),
+          legend.key.height = unit(0.8, "lines"))
+}
+
+theme_set(theme_src())
+update_geom_defaults("text", list(family = "Source Sans Pro", fontface = "bold"))
+
+
+```
+
+
+```{r Cleaning}
+
+micro <- list.files("data/microdata", full.names = TRUE) %>%
+  map_dfr(readRDS) %>%
+  janitor::clean_names() %>%
+  filter(est_st == "09") %>% 
+  mutate(race = ifelse(rhispanic == 2, "latino", as.character(rrace)) %>%
+           as_factor() %>%
+           fct_recode(white = "1", black = "2", asian = "3", other = "4") %>%
+           fct_relevel("white", "black", "latino", "asian") %>%
+           fct_relabel(str_to_sentence)) %>%
+  select(week, state = est_st, msa = est_msa, pweight, race, curfoodsuf, prifoodsuf, freefood, child_meals = wherefree1, food_bank = wherefree2, home_delivered = wherefree3, religious_org = wherefree4, shelter = wherefree5, other_program = wherefree6, family_friends = wherefree7) %>% 
+  mutate(curfoodsuf = fct_collapse(as.character(curfoodsuf), 
+                                  "Enough food to eat" = "1",
+                                  "Enough, but not always kinds wanted" = "2", 
+                                  "Sometimes/Often not enough to eat" = c("3", "4")),
+         prifoodsuf = fct_collapse(as.character(prifoodsuf), 
+                                  "Enough food to eat" = "1",
+                                  "Enough, but not always kinds wanted" = "2", 
+                                  "Sometimes/Often not enough to eat" = c("3", "4")),
+         msa = as.character(msa))
+
+```
+
+```{r Survey stuff}
+
+#survey object
+ct_srvy <- micro %>% as_survey_design(weights = pweight)
+srvys <- lst(ct_srvy)
+
+# put them in a list to map & combine
+#srvys <- lst(us_srvy, ct_srvy) %>% set_names(substr, 1, 2)
+
+# writing functions bc I'm lazy
+survey_share_by <- function(srvy, ..., digits = 2) {
+  grp_vars <- quos(...)
+  srvy %>%
+    group_by(!!!grp_vars) %>%
+    summarise(share = survey_mean()) %>%
+    mutate_at(vars(matches("share")), round, digits = digits)
+}
+
+compare_share <- function(srvy_lst, ...) {
+  srvy_lst %>%
+    map_dfr(survey_share_by, ..., .id = "name") %>%
+    mutate(name = as_factor(name) %>% fct_relabel(toupper))
+}
+
+```
+
+```{r Plot Current Food Suf by Race}
+
+curr_by_race <- srvys %>%
+  map(filter, !is.na(curfoodsuf)) %>%
+  compare_share(race, curfoodsuf) %>%
+  filter(race != "Other", curfoodsuf != -99, curfoodsuf != -88, curfoodsuf != "Enough food to eat", curfoodsuf != "Enough, but not always kinds wanted") %>%
+  mutate(race_num = as.numeric(race))
+
+curr_by_race_offset <- max(curr_by_race$share) / 100
+
+curr_by_race_bars <- curr_by_race %>% 
+  ggplot(aes(x = race, y = share, fill = race)) +
+  geom_col(aes(x = race), position = position_dodge2(), width = 0.8) +
+  # percentage labels
+  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
+  scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
+  scale_color_brewer(palette="Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
+  scale_x_discrete(labels = function(curfoodsuf) str_wrap(curfoodsuf, width = 20)) +
+  labs(x = NULL, y = NULL,
+       title = "Food Insecurity by Race during COVID-19",
+       subtitle = "Share of adults reporting food insecurity, April 23 to June 9, 2020",
+       caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
+  theme(legend.position = "none")
+
+curr_by_race_plot <- cowplot::plot_grid(curr_by_race_bars,
+                                   ncol = 1, rel_heights = c(10, 1))
+
+curr_by_race_plot
+#ggsave("suff_by_race.png", curr_by_race_plot)
+
+```
+
+```{r Prior to Current Take 2}
+
+pri_to_curr <- srvys %>%
+  map(filter, !is.na(curfoodsuf), !is.na(prifoodsuf)) %>%
+  compare_share(prifoodsuf, curfoodsuf) %>%
+  filter(curfoodsuf != -99, curfoodsuf != -88, curfoodsuf != "Enough food to eat",
+         prifoodsuf != -99, prifoodsuf != -88, prifoodsuf != "Enough food to eat") #%>%
+  #mutate(race_num = as.numeric(race))
+
+pri_to_curr_offset <- max(pri_to_curr$share) / 100
+
+pri_to_curr_bars <- pri_to_curr %>% 
+  ggplot(aes(x = curfoodsuf, y = share, fill = race)) +
+  geom_col(aes(x = curfoodsuf), position = position_dodge2(), width = 0.8) +
+  # percentage labels
+  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * pri_to_curr_offset), color = "black", vjust = -1, position = position_dodge2(width = 0.8)) +
+  scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
+  scale_color_brewer(palette="Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
+  #scale_x_discrete(labels = function(curfoodsuf) str_wrap(curfoodsuf, width = 20)) +
+  labs(x = NULL, y = NULL,
+       title = "Food Insecurity by Race during COVID-19",
+       subtitle = "Share of adults with each level of food insecurity, May 21 to May 26, 2020",
+       caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
+  theme(legend.title = element_blank())
+
+pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars, logo,
+                                   ncol = 1, rel_heights = c(10, 1))
+
+pri_to_curr_plot
+#ggsave("suff_by_race.png", curr_by_race_plot)
+
+```
+
+
+
 ```{r Prior to Current Food Sufficiency}
 
-prior_suff <- week4 %>%
-  filter(PRIFOODSUF != -99 & PRIFOODSUF != -88) %>%
-  dplyr::count(PRIFOODSUF) %>%
-  mutate(denom = sum(wt = n)) %>%
-  mutate(perc = n/denom) %>% 
-  mutate(time = "P") %>% 
-  setNames(., c("suff", "n", "denom", "perc", "time"))
-
-curr_suff <- week4 %>%
-  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-  dplyr::count(CURFOODSUF) %>%
-  mutate(denom = sum(wt = n)) %>%
-  mutate(perc = n/denom) %>% 
-  mutate(time = "C") %>% 
-  setNames(., c("suff", "n", "denom", "perc", "time"))
-
-pri_to_curr <- rbind(prior_suff, curr_suff) %>% 
-  filter(suff != 1) %>% 
-  mutate(suff = as.factor(suff)) %>% 
-  mutate(time = as.factor(time)) %>% 
-  mutate(time = fct_relevel(time, "P", "C")) %>% 
-  mutate(time = fct_recode(time, "Current Food Sufficiency" = "C", "Prior to March 13, 2020" = "P")) %>% 
-  mutate(suff = fct_recode(suff,
-                           "Enough, but not always kinds wanted" = "2", 
-                           "Sometimes not enough to eat" = "3", 
-                           "Often not enough to eat" = "4"))
+# prior_suff <- week4 %>%
+#   filter(PRIFOODSUF != -99 & PRIFOODSUF != -88) %>%
+#   dplyr::count(PRIFOODSUF) %>%
+#   mutate(denom = sum(wt = n)) %>%
+#   mutate(perc = n/denom) %>% 
+#   mutate(time = "P") %>% 
+#   setNames(., c("suff", "n", "denom", "perc", "time"))
+# 
+# curr_suff <- week4 %>%
+#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
+#   dplyr::count(CURFOODSUF) %>%
+#   mutate(denom = sum(wt = n)) %>%
+#   mutate(perc = n/denom) %>% 
+#   mutate(time = "C") %>% 
+#   setNames(., c("suff", "n", "denom", "perc", "time"))
+# 
+# pri_to_curr <- rbind(prior_suff, curr_suff) %>% 
+#   filter(suff != 1) %>% 
+#   mutate(suff = as.factor(suff)) %>% 
+#   mutate(time = as.factor(time)) %>% 
+#   mutate(time = fct_relevel(time, "P", "C")) %>% 
+#   mutate(time = fct_recode(time, "Current Food Sufficiency" = "C", "Prior to March 13, 2020" = "P")) %>% 
+#   mutate(suff = fct_recode(suff,
+#                            "Enough, but not always kinds wanted" = "2", 
+#                            "Sometimes not enough to eat" = "3", 
+#                            "Often not enough to eat" = "4"))
 
 ```
 
