@@ -16,6 +16,7 @@ library(srvyr)
 library(janitor)
 library(showtext)
 library(rvest)
+library(zoo)
 
 
 #DSS Data
@@ -83,16 +84,26 @@ micro <- list.files("data/microdata", full.names = TRUE) %>%
            fct_recode(white = "1", black = "2", asian = "3", other = "4") %>%
            fct_relevel("white", "black", "latino", "asian") %>%
            fct_relabel(str_to_sentence)) %>%
-  select(week, state = est_st, msa = est_msa, pweight, race, curfoodsuf, prifoodsuf, freefood, child_meals = wherefree1, food_bank = wherefree2, home_delivered = wherefree3, religious_org = wherefree4, shelter = wherefree5, other_program = wherefree6, family_friends = wherefree7) %>% 
+  select(week, state = est_st, msa = est_msa, pweight, race, curfoodsuf, prifoodsuf, freefood, child_meals = wherefree1, food_bank = wherefree2, home_delivered = wherefree3, religious_org = wherefree4, shelter = wherefree5, other_program = wherefree6, family_friends = wherefree7, wrkloss, foodconf) %>% 
   mutate(curfoodsuf = fct_collapse(as.character(curfoodsuf), 
-                                  "Enough food to eat" = "1",
+                                  "Enough of the kinds of foods wanted" = "1",
                                   "Enough, but not always kinds wanted" = "2", 
                                   "Sometimes/Often not enough to eat" = c("3", "4")),
          prifoodsuf = fct_collapse(as.character(prifoodsuf), 
-                                  "Enough food to eat" = "1",
+                                  "Enough of the kinds of foods wanted" = "1",
                                   "Enough, but not always kinds wanted" = "2", 
                                   "Sometimes/Often not enough to eat" = c("3", "4")),
-         msa = as.character(msa))
+         child_meals = fct_recode(as.character(child_meals), "Meals through schools or other programs aimed at children" = "1"),
+         food_bank = fct_recode(as.character(food_bank), "Food pantry or food bank" = "1"),
+         home_delivered = fct_recode(as.character(home_delivered), "Home-delivered meal service" = "1"),
+         religious_org = fct_recode(as.character(religious_org), "Religious organization" = "1"),
+         shelter = fct_recode(as.character(shelter), "Shelter or soup kitchen" = "1"),
+         other_program = fct_recode(as.character(other_program), "Other community program" = "1"),
+         family_friends = fct_recode(as.character(family_friends), "Family, friends, or neighbors" = "1"),
+         msa = as.character(msa),
+         wrkloss = as.character(wrkloss),
+         foodconf = as.character(foodconf))
+
 
 ```
 
@@ -102,10 +113,6 @@ micro <- list.files("data/microdata", full.names = TRUE) %>%
 ct_srvy <- micro %>% as_survey_design(weights = pweight)
 srvys <- lst(ct_srvy)
 
-# put them in a list to map & combine
-#srvys <- lst(us_srvy, ct_srvy) %>% set_names(substr, 1, 2)
-
-# writing functions bc I'm lazy
 survey_share_by <- function(srvy, ..., digits = 2) {
   grp_vars <- quos(...)
   srvy %>%
@@ -122,12 +129,35 @@ compare_share <- function(srvy_lst, ...) {
 
 ```
 
+```{r DSS Data Means}
+
+dss_prior <- dss %>% 
+  filter(Date < "2020-03-10")
+dss_post <- dss %>% 
+  filter(Date >= "2020-03-10")
+  
+mean_prior <- mean(dss_prior$SNAP.applications)
+mean_post <- mean(dss_post$SNAP.applications)
+
+```
+
+```{r Workloss/FoodConf Percent}
+
+workloss <- srvys %>% #47%
+  compare_share(wrkloss)
+
+foodconfidence <- srvys %>% 
+  compare_share(foodconf)
+
+```
+
+
 ```{r Plot Current Food Suf by Race}
 
 curr_by_race <- srvys %>%
   map(filter, !is.na(curfoodsuf)) %>%
   compare_share(race, curfoodsuf) %>%
-  filter(race != "Other", curfoodsuf != -99, curfoodsuf != -88, curfoodsuf != "Enough food to eat", curfoodsuf != "Enough, but not always kinds wanted") %>%
+  filter(race != "Other", curfoodsuf != -99, curfoodsuf != -88, curfoodsuf != "Enough of the kinds of foods wanted", curfoodsuf != "Enough, but not always kinds wanted") %>%
   mutate(race_num = as.numeric(race))
 
 curr_by_race_offset <- max(curr_by_race$share) / 100
@@ -143,7 +173,7 @@ curr_by_race_bars <- curr_by_race %>%
   scale_x_discrete(labels = function(curfoodsuf) str_wrap(curfoodsuf, width = 20)) +
   labs(x = NULL, y = NULL,
        title = "Food Insecurity by Race during COVID-19",
-       subtitle = "Share of adults reporting food insecurity, April 23 to June 9, 2020",
+       subtitle = "Share of adults reporting food insecurity (Sometimes/Often not enough to eat), April 23 to June 9, 2020",
        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
   theme(legend.position = "none")
 
@@ -155,254 +185,112 @@ curr_by_race_plot
 
 ```
 
-```{r Prior to Current Take 2}
+```{r Plot Suff Level Before and After}
 
-pri_to_curr <- srvys %>%
-  map(filter, !is.na(curfoodsuf), !is.na(prifoodsuf)) %>%
-  compare_share(prifoodsuf, curfoodsuf) %>%
-  filter(curfoodsuf != -99, curfoodsuf != -88, curfoodsuf != "Enough food to eat",
-         prifoodsuf != -99, prifoodsuf != -88, prifoodsuf != "Enough food to eat") #%>%
-  #mutate(race_num = as.numeric(race))
+prior <- srvys %>%
+  map(filter, !is.na(prifoodsuf)) %>%
+  compare_share(prifoodsuf) %>%
+  filter(prifoodsuf != -99, prifoodsuf != -88) %>% 
+  mutate(time = "Before COVID-19") %>% 
+  setNames(., c("name", "suff", "share", "share_se", "time"))
+current <- srvys %>%
+  map(filter, !is.na(curfoodsuf)) %>%
+  compare_share(curfoodsuf) %>%
+  filter(curfoodsuf != -99, curfoodsuf != -88) %>% 
+  mutate(time = "After COVID-19") %>% 
+  setNames(., c("name", "suff", "share", "share_se", "time"))
+
+pri_to_curr <- rbind(prior, current) %>% 
+  mutate(time = fct_relevel(time, "Before COVID-19", "After COVID-19"))
 
 pri_to_curr_offset <- max(pri_to_curr$share) / 100
 
 pri_to_curr_bars <- pri_to_curr %>% 
-  ggplot(aes(x = curfoodsuf, y = share, fill = race)) +
-  geom_col(aes(x = curfoodsuf), position = position_dodge2(), width = 0.8) +
+  ggplot(aes(x = suff, y = share, fill = time)) +
+  geom_col(aes(x = suff), position = position_dodge2(), width = 0.8) +
   # percentage labels
-  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * pri_to_curr_offset), color = "black", vjust = -1, position = position_dodge2(width = 0.8)) +
+  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
   scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
   scale_color_brewer(palette="Dark2") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
-  #scale_x_discrete(labels = function(curfoodsuf) str_wrap(curfoodsuf, width = 20)) +
+  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 20)) +
   labs(x = NULL, y = NULL,
-       title = "Food Insecurity by Race during COVID-19",
-       subtitle = "Share of adults with each level of food insecurity, May 21 to May 26, 2020",
+       title = "Food Insecurity Levels before and after COVID-19",
+       subtitle = "Share of adults reporting each level of food security, April 23 to June 9, 2020",
        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
   theme(legend.title = element_blank())
 
-pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars, logo,
+pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars,
                                    ncol = 1, rel_heights = c(10, 1))
 
 pri_to_curr_plot
-#ggsave("suff_by_race.png", curr_by_race_plot)
+#ggsave("pri_to_curr_plot.png", pri_to_curr_plot)
 
 ```
 
+```{r DSS Plot}
 
+dss1 <- dss %>% 
+  filter(SNAP.applications != 0) %>% #removing 0s because they appear to be errors -- 4/10 & 4/11 was Easter weekend
+  mutate(roll_mean = zoo::rollmean(SNAP.applications, 7, fill = NA, align = "left"))
 
-```{r Prior to Current Food Sufficiency}
-
-# prior_suff <- week4 %>%
-#   filter(PRIFOODSUF != -99 & PRIFOODSUF != -88) %>%
-#   dplyr::count(PRIFOODSUF) %>%
-#   mutate(denom = sum(wt = n)) %>%
-#   mutate(perc = n/denom) %>% 
-#   mutate(time = "P") %>% 
-#   setNames(., c("suff", "n", "denom", "perc", "time"))
-# 
-# curr_suff <- week4 %>%
-#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-#   dplyr::count(CURFOODSUF) %>%
-#   mutate(denom = sum(wt = n)) %>%
-#   mutate(perc = n/denom) %>% 
-#   mutate(time = "C") %>% 
-#   setNames(., c("suff", "n", "denom", "perc", "time"))
-# 
-# pri_to_curr <- rbind(prior_suff, curr_suff) %>% 
-#   filter(suff != 1) %>% 
-#   mutate(suff = as.factor(suff)) %>% 
-#   mutate(time = as.factor(time)) %>% 
-#   mutate(time = fct_relevel(time, "P", "C")) %>% 
-#   mutate(time = fct_recode(time, "Current Food Sufficiency" = "C", "Prior to March 13, 2020" = "P")) %>% 
-#   mutate(suff = fct_recode(suff,
-#                            "Enough, but not always kinds wanted" = "2", 
-#                            "Sometimes not enough to eat" = "3", 
-#                            "Often not enough to eat" = "4"))
-
-```
-
-```{r Reason for Insuff}
-
-num_curr_insuff <- curr_suff %>%
-  ungroup() %>%
-  filter(suff %in% c(2, 3, 4)) %>%
-  tally(wt = n) %>%
-  pull(n)
-
-reason_for_insuff <- data.frame("reason" = c("Couldn't afford to buy more food", 
-                                    "Couldn’t get out to buy food", 
-                                    "Afraid to go or didn’t want to go out", 
-                                    "Couldn’t get groceries or meals delivered", 
-                                    "Stores didn’t have the food wanted"),
-                       "number" = c(week4 %>% filter(FOODSUFRSN1 == 1) %>% nrow(),
-                                    week4 %>% filter(FOODSUFRSN2 == 1) %>% nrow(),
-                                    week4 %>% filter(FOODSUFRSN3 == 1) %>% nrow(),
-                                    week4 %>% filter(FOODSUFRSN4 == 1) %>% nrow(),
-                                    week4 %>% filter(FOODSUFRSN5 == 1) %>% nrow())) %>% 
-  mutate(percent = number/num_curr_insuff)
-
-
-```
-
-```{r Food Resources}
-
-num_free_food <- week4 %>%
-  filter(FREEFOOD == 1) %>%
-  tally(FREEFOOD) %>%
-  pull(n)
-
-resource <- data.frame("resource" = c("Free meals through the school or other programs aimed at children", 
-                                    "Food pantry or food bank", 
-                                    "Home-delivered meal service like Meals on Wheels", 
-                                    "Church, synagogue, temple, mosque or other religious organization", 
-                                    "Shelter or soup kitchen",
-                                    "Other community program",
-                                    "Family, friends, or neighbors"),
-                       "number" = c(week4 %>% filter(WHEREFREE1 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE2 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE3 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE4 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE5 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE6 == 1) %>% nrow(),
-                                      week4 %>% filter(WHEREFREE7 == 1) %>% nrow())) %>% 
-  mutate(percent = number/num_free_food)
-
-```
-
-```{r Insuff by Race}
-
-curr_suff_race <- week4 %>%
-  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-  group_by(RRACE) %>%
-  count(CURFOODSUF) %>%
-  mutate(denom = sum(wt = n)) %>%
-  mutate(perc = n/denom)
-
-curr_suff_white <- curr_suff_race %>% 
-  ungroup() %>% 
-  filter(CURFOODSUF != 1 & RRACE == 1) %>% 
-  mutate(RRACE = as.factor(RRACE)) %>% 
-  mutate(RRACE = fct_recode(RRACE,"White" = "1")) %>% 
-  setNames(., c("Race", "suff", "n", "denom", "Percent"))
-
-curr_suff_black <- curr_suff_race %>% 
-  ungroup() %>% 
-  filter(CURFOODSUF != 1 & RRACE == 2) %>%
-  mutate(RRACE = as.factor(RRACE)) %>% 
-  mutate(RRACE = fct_recode(RRACE,"Black" = "2")) %>% 
-  setNames(., c("Race", "suff", "n", "denom", "Percent"))
-  
-
-curr_suff_hispanic <- week4 %>%
-  filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-  group_by(RHISPANIC) %>% 
-  count(CURFOODSUF) %>%
-  mutate(denom = sum(wt = n)) %>%
-  mutate(perc = n/denom) %>%
-  ungroup() %>% 
-  filter(CURFOODSUF != 1 & RHISPANIC == 2) %>% 
-  mutate(RHISPANIC = as.factor(RHISPANIC)) %>% 
-  mutate(RHISPANIC = fct_recode(RHISPANIC, "Latino" = "2")) %>% 
-  setNames(., c("Race", "suff", "n", "denom", "Percent"))
-
-suff_race <- rbind(curr_suff_white, curr_suff_black, curr_suff_hispanic) %>% 
-  mutate(suff = as.factor(suff)) %>% 
-  mutate(suff = fct_recode(suff, 
-                           "Enough, but not always kinds wanted" = "2", 
-                           "Sometimes not enough to eat" = "3", 
-                           "Often not enough to eat" = "4"))
-
-```
-
-```{r DSS Data}
-
-dss_prior <- dss %>% 
-  filter(Date < "2020-03-10")
-dss_post <- dss %>% 
-  filter(Date >= "2020-03-10")
-  
-mean_prior <- mean(dss_prior$SNAP.applications)
-mean_post <- mean(dss_post$SNAP.applications)
-  
-
-```
-
-
-```{r Reject code to maybe resurrect later}
-
-
-## Food insufficiency by work loss
-
-# curr_suff_wrkls <- week4 %>%
-#   filter(CURFOODSUF != -99 & CURFOODSUF != -88) %>%
-#   filter(WRKLOSS != -99) %>%
-#   group_by(WRKLOSS) %>%
-#   count(CURFOODSUF) %>%
-#   mutate(denom = sum(wt = n)) %>%
-#   mutate(perc = n/denom)
-
-```
-
-
-```{r Visualizations}
-
-race_plot <- ggplot(suff_race) +
-  geom_bar(aes(x = suff, y = Percent, fill = Race), stat = "identity", position=position_dodge()) +
-  scale_fill_brewer(palette="Dark2") +
-  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
-  scale_y_continuous(labels = scales::percent) +
-  xlab("Food sufficiency level") +
-  ylab("Percent of respondents") +
-  labs(title = "Food Sufficiency by Race", subtitle = "Week 4 of Pulse Survey Data") +
-  camiller::theme_din() +
-  theme(legend.title = element_blank())
-
-pri_to_curr_plot <- ggplot(pri_to_curr) +
-  geom_bar(aes(x = suff, y = perc, fill = time), stat = "identity", position=position_dodge()) +
-  scale_fill_brewer(palette="Dark2") +
-  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 10)) +
-  scale_y_continuous(labels = scales::percent) +
-  xlab("Food sufficiency level") +
-  ylab("Percent of respondents") +
-  labs(title = "Food Sufficiency", subtitle = "Week 4 of Pulse Survey Data") +
-  camiller::theme_din() +
-  theme(legend.title = element_blank())
-
-# reason_plot <- ggplot(reason_for_insuff) +
-#   geom_bar(aes(x = reorder(reason, -percent), y = percent, fill = reason), stat = "identity", show.legend = FALSE) +
-#   scale_fill_brewer(palette="Dark2") +
-#   scale_x_discrete(labels = function(reason) str_wrap(reason, width = 10)) +
-#   xlab("Reason for Food Insufficiency") +
-#   ylab("Percent of individuals with food insufficiency") +
-#   labs(title = "Reason for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data")
-
-resource_plot <- ggplot(resource) +
-  geom_bar(aes(x = reorder(resource, -percent), y = percent, fill = resource), stat = "identity", show.legend = FALSE) +
-  scale_fill_brewer(palette="Dark2") +
-  scale_x_discrete(labels = function(resource) str_wrap(resource, width = 10)) +
-  scale_y_continuous(labels = scales::percent) +
-  xlab("Source of free meals") +
-  ylab("Percent of individuals who received free meals") +
-  labs(title = "Resources for Food Insufficiency during COVID-19", subtitle = "Week 4 of Pulse Survey Data") +
-  camiller::theme_din()
-
-snap_plot <- ggplot(dss, aes(x=Date, y=SNAP.applications)) + 
+dss_rolling_plot <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
   geom_point() +
-  geom_smooth(se = FALSE, color = "red") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
   geom_vline(xintercept = as.numeric(ymd("2020-03-13")), linetype="dashed", 
                 color = "gray", size=1.5) +
-  camiller::theme_din() +
-  labs(title = "Number of CT SNAP Applications during COVID-19") +
-  xlab("Date") +
-  ylab("Number of Applicants") +
+ #camiller::theme_din() +
+  labs(x = NULL, y = NULL,
+       title = "Connecticut SNAP Applications before and after COVID-19",
+       subtitle = "7 day mean of DSS SNAP Applications",
+       caption = "Source: Connecticut Department of Social Services data") +
   scale_x_date() +
-  theme(axis.text.x=element_text(angle=90,hjust=1))
+  theme(axis.text.x=element_text(hjust=1))
 
-ggsave("pri_to_curr.png", plot = pri_to_curr_plot)
-ggsave("resource.png", plot = resource_plot)
-ggsave("race.png", plot = race_plot)
-ggsave("dss_snap.png", plot = snap_plot)
-
+dss_rolling_plot
+#ggsave("dss_rolling_plot.png", dss_rolling_plot)
 
 ```
+
+```{r Reason Analysis}
+
+resources <- srvys %>%
+  map(filter, freefood == 1)
+child_meals_perc <- reasons %>% compare_share(child_meals) %>% setNames(., c("name", "resource", "share", "share_se")) #40%
+food_bank_perc <- reasons %>% compare_share(food_bank) %>% setNames(., c("name", "resource", "share", "share_se")) #32%
+home_delivered_perc <- reasons %>% compare_share(home_delivered) %>% setNames(., c("name", "resource", "share", "share_se")) #1%
+religious_org_perc <- reasons %>% compare_share(religious_org) %>% setNames(., c("name", "resource", "share", "share_se")) #8%
+shelter_perc <- reasons %>% compare_share(shelter) %>% setNames(., c("name", "resource", "share", "share_se")) #5%
+other_program_perc <- reasons %>% compare_share(other_program) %>% setNames(., c("name", "resource", "share", "share_se")) #21%
+family_friends_perc <- reasons %>% compare_share(family_friends) %>% setNames(., c("name", "resource", "share", "share_se")) #13%
+
+resources_share <- rbind(child_meals_perc, food_bank_perc, home_delivered_perc, religious_org_perc, shelter_perc, other_program_perc, family_friends_perc) %>% 
+  filter(resource != "-99" & resource != "-88")
+
+resources_offset <- max(resources_share$share) / 100
+
+resources_bars <- resources_share %>% 
+  ggplot(aes(x = resource, y = share, fill = resource)) +
+  geom_col(aes(reorder(resource, -share)), position = position_dodge2(), width = 0.8) +
+  # percentage labels
+  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * resources_offset), color = "black", vjust = -1.2, position = position_dodge2(width = 0.8)) +
+  scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
+  scale_color_brewer(palette="Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
+  scale_x_discrete(labels = function(resource) str_wrap(resource, width = 15)) +
+  labs(x = NULL, y = NULL,
+       title = "Resources Used by Connecticut Residents Facing Hunger",
+       subtitle = "Share of adults who reported receiving free meals, April 23 to June 9, 2020",
+       caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
+  theme(legend.position = "none")
+
+resources_plot <- cowplot::plot_grid(resources_bars,
+                                   ncol = 1, rel_heights = c(10, 1))
+
+resources_plot
+ggsave("resources_plot.png", resources_plot)
+```
+
+
+
+
