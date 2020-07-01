@@ -29,23 +29,24 @@ dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOW
 ```{r Retrieve Microdata}
 
 #Nathan's script 
-links <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html") %>% 
-  html_nodes(".uscb-text-link") %>% 
-  html_attr("href") %>% 
-  str_subset("CSV") %>% 
-  str_sub(3,-1)
 
-walk(links, function(puf_url){
-  temp <- tempfile()
-  download.file(paste0("https://", puf_url),temp)
-  filename <- unzip(temp, list = T)$Name %>% 
-    str_subset("pulse2020_puf*")
-  week <- str_extract(filename, "(?<=puf_0)([0-9])")
-  
-  read_csv(unz(temp, filename)) %>% 
-    saveRDS(paste0("data/microdata/week_", week, ".RDS"))
-  unlink(temp)
-}) 
+# links <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html") %>% 
+#   html_nodes(".uscb-text-link") %>% 
+#   html_attr("href") %>% 
+#   str_subset("CSV") %>% 
+#   str_sub(3,-1)
+# 
+# walk(links, function(puf_url){
+#   temp <- tempfile()
+#   download.file(paste0("https://", puf_url),temp)
+#   filename <- unzip(temp, list = T)$Name %>% 
+#     str_subset("pulse2020_puf*")
+#   week <- str_extract(filename, "(?<=puf_0)([0-9])")
+#   
+#   read_csv(unz(temp, filename)) %>% 
+#     saveRDS(paste0("data/microdata/week_", week, ".RDS"))
+#   unlink(temp)
+# }) 
 
 ```
 
@@ -163,8 +164,8 @@ curr_by_race <- srvys %>%
 curr_by_race_offset <- max(curr_by_race$share) / 100
 
 curr_by_race_bars <- curr_by_race %>% 
-  ggplot(aes(x = race, y = share, fill = race)) +
-  geom_col(aes(x = race), position = position_dodge2(), width = 0.8) +
+  ggplot(aes(x = race, y = share)) +
+  geom_col(aes(x = race), position = position_dodge2(), width = 0.8, fill = "cyan4") +
   # percentage labels
   geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
   scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
@@ -178,10 +179,10 @@ curr_by_race_bars <- curr_by_race %>%
   theme(legend.position = "none")
 
 curr_by_race_plot <- cowplot::plot_grid(curr_by_race_bars,
-                                   ncol = 1, rel_heights = c(10, 1))
+                                   ncol = 1, rel_heights = c(5, 1))
 
 curr_by_race_plot
-#ggsave("suff_by_race.png", curr_by_race_plot)
+#ggsave("suff_by_race.png", curr_by_race_plot) 
 
 ```
 
@@ -235,8 +236,7 @@ dss1 <- dss %>%
   mutate(roll_mean = zoo::rollmean(SNAP.applications, 7, fill = NA, align = "left"))
 
 dss_rolling_plot <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
-  geom_point() +
-  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  geom_line(size = 1) +
   geom_vline(xintercept = as.numeric(ymd("2020-03-13")), linetype="dashed", 
                 color = "gray", size=1.5) +
  #camiller::theme_din() +
@@ -256,13 +256,13 @@ dss_rolling_plot
 
 resources <- srvys %>%
   map(filter, freefood == 1)
-child_meals_perc <- reasons %>% compare_share(child_meals) %>% setNames(., c("name", "resource", "share", "share_se")) #40%
-food_bank_perc <- reasons %>% compare_share(food_bank) %>% setNames(., c("name", "resource", "share", "share_se")) #32%
-home_delivered_perc <- reasons %>% compare_share(home_delivered) %>% setNames(., c("name", "resource", "share", "share_se")) #1%
-religious_org_perc <- reasons %>% compare_share(religious_org) %>% setNames(., c("name", "resource", "share", "share_se")) #8%
-shelter_perc <- reasons %>% compare_share(shelter) %>% setNames(., c("name", "resource", "share", "share_se")) #5%
-other_program_perc <- reasons %>% compare_share(other_program) %>% setNames(., c("name", "resource", "share", "share_se")) #21%
-family_friends_perc <- reasons %>% compare_share(family_friends) %>% setNames(., c("name", "resource", "share", "share_se")) #13%
+child_meals_perc <- resources %>% compare_share(child_meals) %>% setNames(., c("name", "resource", "share", "share_se")) #40%
+food_bank_perc <- resources %>% compare_share(food_bank) %>% setNames(., c("name", "resource", "share", "share_se")) #32%
+home_delivered_perc <- resources %>% compare_share(home_delivered) %>% setNames(., c("name", "resource", "share", "share_se")) #1%
+religious_org_perc <- resources %>% compare_share(religious_org) %>% setNames(., c("name", "resource", "share", "share_se")) #8%
+shelter_perc <- resources %>% compare_share(shelter) %>% setNames(., c("name", "resource", "share", "share_se")) #5%
+other_program_perc <- resources %>% compare_share(other_program) %>% setNames(., c("name", "resource", "share", "share_se")) #21%
+family_friends_perc <- resources %>% compare_share(family_friends) %>% setNames(., c("name", "resource", "share", "share_se")) #13%
 
 resources_share <- rbind(child_meals_perc, food_bank_perc, home_delivered_perc, religious_org_perc, shelter_perc, other_program_perc, family_friends_perc) %>% 
   filter(resource != "-99" & resource != "-88")
@@ -270,10 +270,10 @@ resources_share <- rbind(child_meals_perc, food_bank_perc, home_delivered_perc, 
 resources_offset <- max(resources_share$share) / 100
 
 resources_bars <- resources_share %>% 
-  ggplot(aes(x = resource, y = share, fill = resource)) +
-  geom_col(aes(reorder(resource, -share)), position = position_dodge2(), width = 0.8) +
+  ggplot(aes(x = resource, y = share)) +
+  geom_col(aes(reorder(resource, -share)), position = position_dodge2(), width = 0.8, fill = "cyan4") +
   # percentage labels
-  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * resources_offset), color = "black", vjust = -1.2, position = position_dodge2(width = 0.8)) +
+  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * resources_offset), color = "black", vjust = -0.8, position = position_dodge2(width = 0.8)) +
   scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
   scale_color_brewer(palette="Dark2") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
@@ -285,10 +285,10 @@ resources_bars <- resources_share %>%
   theme(legend.position = "none")
 
 resources_plot <- cowplot::plot_grid(resources_bars,
-                                   ncol = 1, rel_heights = c(10, 1))
+                                   ncol = 1, rel_heights = c(5, 1))
 
 resources_plot
-ggsave("resources_plot.png", resources_plot)
+#ggsave("resources_plot.png", resources_plot)
 ```
 
 
