@@ -28,25 +28,25 @@ dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOW
 
 ```{r Retrieve Microdata}
 
-#Nathan's script 
+#Nathan's script
 
-# links <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html") %>% 
-#   html_nodes(".uscb-text-link") %>% 
-#   html_attr("href") %>% 
-#   str_subset("CSV") %>% 
+# links <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html") %>%
+#   html_nodes(".uscb-text-link") %>%
+#   html_attr("href") %>%
+#   str_subset("CSV") %>%
 #   str_sub(3,-1)
 # 
 # walk(links, function(puf_url){
 #   temp <- tempfile()
 #   download.file(paste0("https://", puf_url),temp)
-#   filename <- unzip(temp, list = T)$Name %>% 
+#   filename <- unzip(temp, list = T)$Name %>%
 #     str_subset("pulse2020_puf*")
 #   week <- str_extract(filename, "(?<=puf_0)([0-9])")
-#   
-#   read_csv(unz(temp, filename)) %>% 
+# 
+#   read_csv(unz(temp, filename)) %>%
 #     saveRDS(paste0("data/microdata/week_", week, ".RDS"))
 #   unlink(temp)
-# }) 
+# })
 
 ```
 
@@ -56,7 +56,7 @@ dss <- read.csv("https://data.ct.gov/api/views/pmna-639e/rows.csv?accessType=DOW
 font_add_google(name = "Source Sans Pro")
 showtext_auto()
 
-theme_src <- function(base_family = "Source Sans Pro", base_size = 12, ...) {
+theme_src <- function(base_family = "Source Sans Pro", base_size = 11.5, ...) {
   camiller::theme_din(base_family = base_family, base_size = base_size, ...) +
     theme(plot.title.position = "plot",
           plot.caption.position = "panel",
@@ -114,6 +114,10 @@ micro <- list.files("data/microdata", full.names = TRUE) %>%
 ct_srvy <- micro %>% as_survey_design(weights = pweight)
 srvys <- lst(ct_srvy)
 
+#us survey object
+us_srvy <- micro_us %>% as_survey_design(weights = pweight)
+srvys_us <- lst(us_srvy)                                       
+
 survey_share_by <- function(srvy, ..., digits = 2) {
   grp_vars <- quos(...)
   srvy %>%
@@ -150,6 +154,14 @@ workloss <- srvys %>% #47%
 foodconfidence <- srvys %>% 
   compare_share(foodconf)
 
+# foodsufct <- srvys %>%
+#   map(filter, !is.na(curfoodsuf)) %>%
+#   compare_share(curfoodsuf)
+# 
+# foodsufus <- srvys_us %>%
+#   map(filter, !is.na(curfoodsuf)) %>%
+#   compare_share(curfoodsuf)
+
 ```
 
 
@@ -174,7 +186,7 @@ curr_by_race_bars <- curr_by_race %>%
   scale_x_discrete(labels = function(curfoodsuf) str_wrap(curfoodsuf, width = 20)) +
   labs(x = NULL, y = NULL,
        title = "Food Insecurity by Race during COVID-19",
-       subtitle = "Share of adults reporting food insecurity (Sometimes/Often not enough to eat), April 23 to June 9, 2020",
+       subtitle = "Share of CT adults reporting food insecurity (Sometimes/Often not enough to eat), April 23 to June 23, 2020",
        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
   theme(legend.position = "none")
 
@@ -182,50 +194,50 @@ curr_by_race_plot <- cowplot::plot_grid(curr_by_race_bars,
                                    ncol = 1, rel_heights = c(5, 1))
 
 curr_by_race_plot
-#ggsave("suff_by_race.png", curr_by_race_plot) 
+ggsave("suff_by_race.png", curr_by_race_plot) 
 
 ```
 
 ```{r Plot Suff Level Before and After}
 
-prior <- srvys %>%
-  map(filter, !is.na(prifoodsuf)) %>%
-  compare_share(prifoodsuf) %>%
-  filter(prifoodsuf != -99, prifoodsuf != -88) %>% 
-  mutate(time = "Before COVID-19") %>% 
-  setNames(., c("name", "suff", "share", "share_se", "time"))
-current <- srvys %>%
-  map(filter, !is.na(curfoodsuf)) %>%
-  compare_share(curfoodsuf) %>%
-  filter(curfoodsuf != -99, curfoodsuf != -88) %>% 
-  mutate(time = "After COVID-19") %>% 
-  setNames(., c("name", "suff", "share", "share_se", "time"))
-
-pri_to_curr <- rbind(prior, current) %>% 
-  mutate(time = fct_relevel(time, "Before COVID-19", "After COVID-19"))
-
-pri_to_curr_offset <- max(pri_to_curr$share) / 100
-
-pri_to_curr_bars <- pri_to_curr %>% 
-  ggplot(aes(x = suff, y = share, fill = time)) +
-  geom_col(aes(x = suff), position = position_dodge2(), width = 0.8) +
-  # percentage labels
-  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
-  scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
-  scale_color_brewer(palette="Dark2") +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
-  scale_x_discrete(labels = function(suff) str_wrap(suff, width = 20)) +
-  labs(x = NULL, y = NULL,
-       title = "Food Insecurity Levels before and after COVID-19",
-       subtitle = "Share of adults reporting each level of food security, April 23 to June 9, 2020",
-       caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
-  theme(legend.title = element_blank())
-
-pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars,
-                                   ncol = 1, rel_heights = c(10, 1))
-
-pri_to_curr_plot
-#ggsave("pri_to_curr_plot.png", pri_to_curr_plot)
+# prior <- srvys %>%
+#   map(filter, !is.na(prifoodsuf)) %>%
+#   compare_share(prifoodsuf) %>%
+#   filter(prifoodsuf != -99, prifoodsuf != -88) %>% 
+#   mutate(time = "Before COVID-19") %>% 
+#   setNames(., c("name", "suff", "share", "share_se", "time"))
+# current <- srvys %>%
+#   map(filter, !is.na(curfoodsuf)) %>%
+#   compare_share(curfoodsuf) %>%
+#   filter(curfoodsuf != -99, curfoodsuf != -88) %>% 
+#   mutate(time = "After COVID-19") %>% 
+#   setNames(., c("name", "suff", "share", "share_se", "time"))
+# 
+# pri_to_curr <- rbind(prior, current) %>% 
+#   mutate(time = fct_relevel(time, "Before COVID-19", "After COVID-19"))
+# 
+# pri_to_curr_offset <- max(pri_to_curr$share) / 100
+# 
+# pri_to_curr_bars <- pri_to_curr %>% 
+#   ggplot(aes(x = suff, y = share, fill = time)) +
+#   geom_col(aes(x = suff), position = position_dodge2(), width = 0.8) +
+#   # percentage labels
+#   geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
+#   scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
+#   scale_color_brewer(palette="Dark2") +
+#   scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
+#   scale_x_discrete(labels = function(suff) str_wrap(suff, width = 20)) +
+#   labs(x = NULL, y = NULL,
+#        title = "Food Insecurity Levels before and after COVID-19",
+#        subtitle = "Share of adults reporting each level of food security, April 23 to June 23, 2020",
+#        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
+#   theme(legend.title = element_blank())
+# 
+# pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars,
+#                                    ncol = 1, rel_heights = c(10, 1))
+# 
+# pri_to_curr_plot
+# ggsave("pri_to_curr_plot.png", pri_to_curr_plot)
 
 ```
 
@@ -239,6 +251,7 @@ dss_rolling_plot <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
   geom_line(size = 1) +
   geom_vline(xintercept = as.numeric(ymd("2020-03-13")), linetype="dashed", 
                 color = "gray", size=1.5) +
+  geom_text(aes(x = ymd("2020-03-13"), label="March 10, 2020", y=0), colour="gray", angle = 90, vjust = -1, hjust = -1.3, size = 4) +
  #camiller::theme_din() +
   labs(x = NULL, y = NULL,
        title = "Connecticut SNAP Applications before and after COVID-19",
@@ -252,7 +265,7 @@ dss_rolling_plot
 
 ```
 
-```{r Reason Analysis}
+```{r Resources Analysis}
 
 resources <- srvys %>%
   map(filter, freefood == 1)
@@ -280,7 +293,7 @@ resources_bars <- resources_share %>%
   scale_x_discrete(labels = function(resource) str_wrap(resource, width = 15)) +
   labs(x = NULL, y = NULL,
        title = "Resources Used by Connecticut Residents Facing Hunger",
-       subtitle = "Share of adults who reported receiving free meals, April 23 to June 9, 2020",
+       subtitle = "Share of CT adults who reported receiving free meals, April 23 to June 23, 2020",
        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
   theme(legend.position = "none")
 
