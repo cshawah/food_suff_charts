@@ -108,6 +108,13 @@ micro <- list.files("data/microdata", full.names = TRUE) %>%
 
 ```
 
+``` {r Logo}
+logo <- cowplot::ggdraw() + 
+  cowplot::draw_image("https://ct-data-haven.github.io/legislative18/static/media/logo.9144a510.png", x = 0, hjust = 0, width = 0.17) +
+  theme(plot.margin = margin(0.05, 0.05, 0.05, 0.05, "in"))
+```
+
+
 ```{r Survey stuff}
 
 #survey object
@@ -115,8 +122,8 @@ ct_srvy <- micro %>% as_survey_design(weights = pweight)
 srvys <- lst(ct_srvy)
 
 #us survey object
-us_srvy <- micro_us %>% as_survey_design(weights = pweight)
-srvys_us <- lst(us_srvy)                                       
+#us_srvy <- micro_us %>% as_survey_design(weights = pweight)
+#srvys_us <- lst(us_srvy)                                       
 
 survey_share_by <- function(srvy, ..., digits = 2) {
   grp_vars <- quos(...)
@@ -130,6 +137,20 @@ compare_share <- function(srvy_lst, ...) {
   srvy_lst %>%
     map_dfr(survey_share_by, ..., .id = "name") %>%
     mutate(name = as_factor(name) %>% fct_relabel(toupper))
+}
+  
+compare_bars <- function(df) {
+  ggplot(df, aes(x = fct_rev(group), y = share, fill = dimension)) +
+  geom_col(width = 0.8) +
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), labels = scales::percent_format(accuracy = 1)) +
+  scale_fill_carto_d(palette = "Vivid") +
+  facet_grid(rows = vars(dimension), scales = "free_y", space = "free") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        plot.title.position = "plot") +
+    labs(subtitle = "CT groups, all weeks", x = NULL, y = NULL)
 }
 
 ```
@@ -190,54 +211,11 @@ curr_by_race_bars <- curr_by_race %>%
        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
   theme(legend.position = "none")
 
-curr_by_race_plot <- cowplot::plot_grid(curr_by_race_bars,
+curr_by_race_plot <- cowplot::plot_grid(curr_by_race_bars, logo,
                                    ncol = 1, rel_heights = c(5, 1))
 
 curr_by_race_plot
-ggsave("suff_by_race.png", curr_by_race_plot) 
-
-```
-
-```{r Plot Suff Level Before and After}
-
-# prior <- srvys %>%
-#   map(filter, !is.na(prifoodsuf)) %>%
-#   compare_share(prifoodsuf) %>%
-#   filter(prifoodsuf != -99, prifoodsuf != -88) %>% 
-#   mutate(time = "Before COVID-19") %>% 
-#   setNames(., c("name", "suff", "share", "share_se", "time"))
-# current <- srvys %>%
-#   map(filter, !is.na(curfoodsuf)) %>%
-#   compare_share(curfoodsuf) %>%
-#   filter(curfoodsuf != -99, curfoodsuf != -88) %>% 
-#   mutate(time = "After COVID-19") %>% 
-#   setNames(., c("name", "suff", "share", "share_se", "time"))
-# 
-# pri_to_curr <- rbind(prior, current) %>% 
-#   mutate(time = fct_relevel(time, "Before COVID-19", "After COVID-19"))
-# 
-# pri_to_curr_offset <- max(pri_to_curr$share) / 100
-# 
-# pri_to_curr_bars <- pri_to_curr %>% 
-#   ggplot(aes(x = suff, y = share, fill = time)) +
-#   geom_col(aes(x = suff), position = position_dodge2(), width = 0.8) +
-#   # percentage labels
-#   geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * curr_by_race_offset), color = "white", vjust = 1, position = position_dodge2(width = 0.8)) +
-#   scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
-#   scale_color_brewer(palette="Dark2") +
-#   scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
-#   scale_x_discrete(labels = function(suff) str_wrap(suff, width = 20)) +
-#   labs(x = NULL, y = NULL,
-#        title = "Food Insecurity Levels before and after COVID-19",
-#        subtitle = "Share of adults reporting each level of food security, April 23 to June 23, 2020",
-#        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
-#   theme(legend.title = element_blank())
-# 
-# pri_to_curr_plot <- cowplot::plot_grid(pri_to_curr_bars,
-#                                    ncol = 1, rel_heights = c(10, 1))
-# 
-# pri_to_curr_plot
-# ggsave("pri_to_curr_plot.png", pri_to_curr_plot)
+#ggsave("suff_by_race.jpg", curr_by_race_plot) 
 
 ```
 
@@ -247,7 +225,7 @@ dss1 <- dss %>%
   filter(SNAP.applications != 0) %>% #removing 0s because they appear to be errors -- 4/10 & 4/11 was Easter weekend
   mutate(roll_mean = zoo::rollmean(SNAP.applications, 7, fill = NA, align = "left"))
 
-dss_rolling_plot <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
+dss_rolling <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
   geom_line(size = 1) +
   geom_vline(xintercept = as.numeric(ymd("2020-03-13")), linetype="dashed", 
                 color = "gray", size=1.5) +
@@ -260,48 +238,48 @@ dss_rolling_plot <- ggplot(dss1, aes(x = Date, y = roll_mean)) +
   scale_x_date() +
   theme(axis.text.x=element_text(hjust=1))
 
+dss_rolling_plot <- cowplot::plot_grid(dss_rolling, logo,
+                                   ncol = 1, rel_heights = c(5, 1))
 dss_rolling_plot
-#ggsave("dss_rolling_plot.png", dss_rolling_plot)
+ggsave("dss_rolling_plot.jpg", dss_rolling_plot)
 
 ```
 
 ```{r Resources Analysis}
 
-resources <- srvys %>%
-  map(filter, freefood == 1)
-child_meals_perc <- resources %>% compare_share(child_meals) %>% setNames(., c("name", "resource", "share", "share_se")) #40%
-food_bank_perc <- resources %>% compare_share(food_bank) %>% setNames(., c("name", "resource", "share", "share_se")) #32%
-home_delivered_perc <- resources %>% compare_share(home_delivered) %>% setNames(., c("name", "resource", "share", "share_se")) #1%
-religious_org_perc <- resources %>% compare_share(religious_org) %>% setNames(., c("name", "resource", "share", "share_se")) #8%
-shelter_perc <- resources %>% compare_share(shelter) %>% setNames(., c("name", "resource", "share", "share_se")) #5%
-other_program_perc <- resources %>% compare_share(other_program) %>% setNames(., c("name", "resource", "share", "share_se")) #21%
-family_friends_perc <- resources %>% compare_share(family_friends) %>% setNames(., c("name", "resource", "share", "share_se")) #13%
-
-resources_share <- rbind(child_meals_perc, food_bank_perc, home_delivered_perc, religious_org_perc, shelter_perc, other_program_perc, family_friends_perc) %>% 
-  filter(resource != "-99" & resource != "-88")
-
-resources_offset <- max(resources_share$share) / 100
-
-resources_bars <- resources_share %>% 
-  ggplot(aes(x = resource, y = share)) +
-  geom_col(aes(reorder(resource, -share)), position = position_dodge2(), width = 0.8, fill = "cyan4") +
-  # percentage labels
-  geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * resources_offset), color = "black", vjust = -0.8, position = position_dodge2(width = 0.8)) +
-  scale_fill_brewer(palette = "Dark2") + #couldn't use the other palette
-  scale_color_brewer(palette="Dark2") +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
-  scale_x_discrete(labels = function(resource) str_wrap(resource, width = 15)) +
-  labs(x = NULL, y = NULL,
-       title = "Resources Used by Connecticut Residents Facing Hunger",
-       subtitle = "Share of CT adults who reported receiving free meals, April 23 to June 23, 2020",
-       caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
-  theme(legend.position = "none")
-
-resources_plot <- cowplot::plot_grid(resources_bars,
-                                   ncol = 1, rel_heights = c(5, 1))
-
-resources_plot
-#ggsave("resources_plot.png", resources_plot)
+# resources <- srvys %>%
+#   map(filter, freefood == 1)
+# child_meals_perc <- resources %>% compare_share(child_meals) %>% setNames(., c("name", "resource", "share", "share_se")) #40%
+# food_bank_perc <- resources %>% compare_share(food_bank) %>% setNames(., c("name", "resource", "share", "share_se")) #32%
+# home_delivered_perc <- resources %>% compare_share(home_delivered) %>% setNames(., c("name", "resource", "share", "share_se")) #1%
+# religious_org_perc <- resources %>% compare_share(religious_org) %>% setNames(., c("name", "resource", "share", "share_se")) #8%
+# shelter_perc <- resources %>% compare_share(shelter) %>% setNames(., c("name", "resource", "share", "share_se")) #5%
+# other_program_perc <- resources %>% compare_share(other_program) %>% setNames(., c("name", "resource", "share", "share_se")) #21%
+# family_friends_perc <- resources %>% compare_share(family_friends) %>% setNames(., c("name", "resource", "share", "share_se")) #13%
+# 
+# resources_share <- rbind(child_meals_perc, food_bank_perc, home_delivered_perc, religious_org_perc, shelter_perc, other_program_perc, family_friends_perc) %>% 
+#   filter(resource != "-99" & resource != "-88")
+# 
+# resources_offset <- max(resources_share$share) / 100
+# 
+# resources_bars <- resources_share %>% 
+#   ggplot(aes(x = resource, y = share)) +
+#   geom_col(aes(reorder(resource, -share)), position = position_dodge2(), width = 0.8, fill = "cyan4") +
+#   # percentage labels
+#   geom_text(aes(label = scales::percent(share, accuracy = 1), y = share - 2 * resources_offset), color = "black", vjust = -0.8, position = position_dodge2(width = 0.8)) +
+#   scale_y_continuous(expand = expansion(mult = c(0, 0.05)), breaks = NULL) +
+#   scale_x_discrete(labels = function(resource) str_wrap(resource, width = 15)) +
+#   labs(x = NULL, y = NULL,
+#        title = "Resources Used by Connecticut Residents Facing Hunger",
+#        subtitle = "Share of CT adults who reported receiving free meals, April 23 to June 23, 2020",
+#        caption = "Source: US Census Bureau 2020 Household Pulse Survey microdata") +
+#   theme(legend.position = "none")
+# 
+# resources_plot <- cowplot::plot_grid(resources_bars,
+#                                    ncol = 1, rel_heights = c(5, 1))
+# 
+# resources_plot
+# #ggsave("resources_plot.png", resources_plot)
 ```
 
 
